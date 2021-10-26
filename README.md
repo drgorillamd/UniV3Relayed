@@ -1,5 +1,4 @@
-----------------------------------------------------------------------
--- UNAUDITED AND CONSIDERED AS PRE-ALPHA, DO NOT USE ON MAINNET --
+-- UNAUDITED - DO NOT USE ON MAINNET --
 ----------------------------------------------------------------------
 
 ## Uniswap V3 gas-sponsored swaps
