@@ -36,14 +36,15 @@ describe("U3R: ETH and direct access/no gas-sponsoring", function () {
     const fees = 3000;
     const zeroPad32 = ethers.utils.hexZeroPad('0x', 32); //to fill the v,r,s params
     const amountOut = GWEI.mul('4000');
-    const swapPayload = ethers.utils.defaultAbiCoder.encode(
-      ['address', 'address', 'uint24', 'uint256',   'uint256',      'uint160'],
-      [WETH9,      DAI,       fees,     amountOut,  quoteWithSlippage,      0])
     const dest = user.address;
-    const curr_nonce = await U3R.nonces(dest);
     const deadline = Date.now()+60;
 
-    const eth_used = await U3R.connect(user).callStatic.swapExactOutput(dest, curr_nonce, deadline, 0, zeroPad32, zeroPad32, swapPayload, {value: quoteWithSlippage});
+    const swapPayload = ethers.utils.defaultAbiCoder.encode(
+      ['address', 'address', 'uint24',  'address', 'uint256', 'uint256',   'uint256',      'uint160'],
+      [WETH9,      DAI,       fees,     dest,       deadline,  amountOut,  quoteWithSlippage,      0])
+    const curr_nonce = await U3R.nonces(dest);
+    
+    const eth_used = await U3R.connect(user).callStatic.swapExactOutput(curr_nonce, 0, zeroPad32, zeroPad32, swapPayload, {value: quoteWithSlippage});
 
     expect(eth_used).to.be.closeTo(quoteInETH, quoteWithSlippage.sub(quoteInETH));
   })
@@ -84,14 +85,15 @@ describe("U3R: ETH relayed (gas tank)", function () {
     const fees = 3000;
     const deadline = Date.now()+60;
     const amountOut = GWEI.mul(4000);
-    const swapPayload = ethers.utils.defaultAbiCoder.encode(
-      ['address', 'address', 'uint24', 'uint256',   'uint256',      'uint160'],
-      [WETH9,      DAI,       fees,     amountOut,  quoteWithSlippage,      0])
     const dest = user.address;
     const curr_nonce = await U3R.nonces(dest);
 
+    const swapPayload = ethers.utils.defaultAbiCoder.encode(
+      ['address', 'address', 'uint24',  'address', 'uint256', 'uint256',   'uint256',      'uint160'],
+      [WETH9,      DAI,       fees,     dest,       deadline,  amountOut,  quoteWithSlippage,      0])
+
     // -- hash and sign --
-    const messageHashBytes = ethers.utils.solidityKeccak256(['address', 'uint256', 'uint256'], [dest, curr_nonce, deadline]);
+    const messageHashBytes = ethers.utils.solidityKeccak256(['uint256', 'bytes'], [curr_nonce, swapPayload]);
     const flatSig = await user.signMessage(ethers.utils.arrayify(messageHashBytes));
     const sig = ethers.utils.splitSignature(flatSig);
 
@@ -99,11 +101,11 @@ describe("U3R: ETH relayed (gas tank)", function () {
     await gasTank.connect(user).deposit({value: quoteWithSlippage});
 
     // -- gather returned value --
-    const eth_swapped = await U3R.connect(owner).callStatic.swapExactOutput(dest, curr_nonce, deadline, sig.v, sig.r, sig.s, swapPayload);
+    const eth_swapped = await U3R.connect(owner).callStatic.swapExactOutput(curr_nonce, sig.v, sig.r, sig.s, swapPayload);
 
     // -- actual tx --
     const eth_balance_before = await provider.getBalance(dest);
-    const tx = await U3R.connect(owner).swapExactOutput(dest, curr_nonce, deadline, sig.v, sig.r, sig.s, swapPayload);
+    const tx = await U3R.connect(owner).swapExactOutput(curr_nonce, sig.v, sig.r, sig.s, swapPayload);
     await tx.wait();
     const eth_balance_after = await provider.getBalance(dest);
 
@@ -145,16 +147,17 @@ describe("U3R: DAI-USDC, gas-sponsored", function () {
     const fees = 3000;
     const zeroPad32 = ethers.utils.hexZeroPad('0x', 32);
     const amountOut = GWEI.mul('4000');
-    const swapPayload = ethers.utils.defaultAbiCoder.encode(
-      ['address', 'address', 'uint24', 'uint256',   'uint256',      'uint160'],
-      [WETH9,      DAI,       fees,     amountOut,  quoteWithSlippage,      0])
     const dest = user.address;
     const curr_nonce = await U3R.nonces(dest);
     const deadline = Date.now()+60;
 
+    const swapPayload = ethers.utils.defaultAbiCoder.encode(
+      ['address', 'address', 'uint24',  'address', 'uint256', 'uint256',   'uint256',      'uint160'],
+      [WETH9,      DAI,       fees,     dest,       deadline,  amountOut,  quoteWithSlippage,      0])
+
     // -- tx --
-    const eth_used = await U3R.connect(user).callStatic.swapExactOutput(dest, curr_nonce, deadline, 0, zeroPad32, zeroPad32, swapPayload, {value: quoteWithSlippage});
-    const tx = await U3R.connect(user).swapExactOutput(dest, curr_nonce, deadline, 0, zeroPad32, zeroPad32, swapPayload, {value: quoteWithSlippage});
+    const eth_used = await U3R.connect(user).callStatic.swapExactOutput(curr_nonce, 0, zeroPad32, zeroPad32, swapPayload, {value: quoteWithSlippage});
+    const tx = await U3R.connect(user).swapExactOutput(curr_nonce, 0, zeroPad32, zeroPad32, swapPayload, {value: quoteWithSlippage});
     await tx.wait();
 
     expect(eth_used).to.be.closeTo(quoteInETH, quoteWithSlippage.sub(quoteInETH));
@@ -170,16 +173,19 @@ describe("U3R: DAI-USDC, gas-sponsored", function () {
     const fees = 500;
     const deadline = Date.now()+60;
     const amountIn = GWEI.mul('4000');
-    const swapPayload = ethers.utils.defaultAbiCoder.encode(
-      ['address', 'address', 'uint24', 'uint256',   'uint256',      'uint160'],
-      [DAI,      USDC,       fees,     amountIn,    minOutInUSDC,      0])
     const dest = user.address;
     const curr_nonce = await U3R.nonces(dest);
 
-    // -- sign --
-    const messageHashBytes = ethers.utils.solidityKeccak256(['address', 'uint256', 'uint256'], [dest, curr_nonce, deadline]);
+    const swapPayload = ethers.utils.defaultAbiCoder.encode(
+      ['address', 'address', 'uint24',  'address', 'uint256', 'uint256',   'uint256',      'uint160'],
+      [DAI,        USDC,       fees,     dest,       deadline,  amountIn,    minOutInUSDC,         0])
+
+
+    // -- hash and sign --
+    const messageHashBytes = ethers.utils.solidityKeccak256(['uint256', 'bytes'], [curr_nonce, swapPayload]);
     const flatSig = await user.signMessage(ethers.utils.arrayify(messageHashBytes));
     const sig = ethers.utils.splitSignature(flatSig);
+
 
     // -- approve dai spending by U3R contract (router is then approved by U3R) --
     const approve_abi = ["function approve(address spender, uint256 amount) external returns (bool)"];
@@ -187,12 +193,14 @@ describe("U3R: DAI-USDC, gas-sponsored", function () {
     const apr_tx = await dai_contract.approve(U3R.address, amountIn);
     await apr_tx.wait();
 
+
     // -- returned value --
-    const USDC_received = await U3R.connect(owner).callStatic.swapExactInput(dest, curr_nonce, deadline, sig.v, sig.r, sig.s, swapPayload);
+    const USDC_received = await U3R.connect(owner).callStatic.swapExactInput(curr_nonce, sig.v, sig.r, sig.s, swapPayload);
+
 
     // -- actual tx --
     const eth_balance_before = await provider.getBalance(dest);
-    const tx = await U3R.connect(owner).swapExactInput(dest, curr_nonce, deadline, sig.v, sig.r, sig.s, swapPayload);
+    const tx = await U3R.connect(owner).swapExactInput(curr_nonce, sig.v, sig.r, sig.s, swapPayload);
     await tx.wait();
     const eth_balance_after = await provider.getBalance(dest);
 
