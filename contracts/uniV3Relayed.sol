@@ -13,7 +13,8 @@ import "./U3RGasTank.sol";
 /// @dev implementation of third-party gas sponsoring for Uniswap V3 single input and output (complexes routes are trivial to implement from there)
 /// 2 scenarios are treated: swaps from a standard ERC20 token and swap from eth
 /// since uniswap handles the weth wrapping, swap from eth is done via the use of an external
-/// contract (the GasTank), deployed and owned by the main U3R contract.
+/// contract (the GasTank), deployed and owned by the main U3R contract - alternative would be the sender wrapping her ETH to approve/transferFrom,
+/// but it would require the sender to spend some gas then).
 /// The gas-sponsor party insure user auth via a eth_sign message of a keccak hash of the encodePackaging of nonce+swap params
 /// U3R allows user to swap directly (ie without external sponsor for gas), if the swap recipient is the msg.sender
 /// Off-chain values (for slippage and quote) are retrieved via a static call to getQuote
