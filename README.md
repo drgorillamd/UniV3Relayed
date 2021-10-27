@@ -15,8 +15,8 @@ How can an user avoid paying for the gas for her swap using uniswap V3
 ## Summary of the proposed answer:
 Alice wants a gas-less swap, Bob owns a third party address
 Alice creates a swap payload, including the required parameters from uniswap (based on exactAmountIn or exactAmountOut, https://docs.uniswap.org/protocol/reference/periphery/interfaces/ISwapRouter#parameter-structs) and an unique incremental nonce.
-Alice signs a message generated with a keccak256 hash of the packed encoding of her address, her current nonce and the deadline (as a standar uint unix epoch in seconds).
-Alice sends this message to Bob, with her swap payload.
+Alice signs a message generated with a keccak256 hash of the packed encoding of her current nonce and the swap params.
+Alice sends this message to Bob, along with her swap payload.
 
 Bob verify the authenticity of the message (which needs to have been signed by the swap recipient).
 Bob then swap, based on the payload received with the signed message.
