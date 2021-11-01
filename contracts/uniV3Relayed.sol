@@ -3,6 +3,8 @@ pragma solidity ^0.8.0;
 
 import "hardhat/console.sol";
 
+import "/@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
+import "/@uniswap/v3-core/contracts/interfaces/IUniswapV3Factory.sol";
 import "@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol";
 import "@uniswap/v3-periphery/contracts/interfaces/IQuoter.sol";
 import "@uniswap/v3-periphery/contracts/libraries/TransferHelper.sol";
@@ -25,28 +27,30 @@ contract uniV3Relayed {
 
     mapping(address=>uint256) public nonces;
 
-    ISwapRouter public immutable swapRouter;
+    IUniswapV3Factory public immutable swapFactory;
     IQuoter public immutable quoter;
-    U3RGasTank public gasTank;
+    U3RGasTank public immutable gasTank;
 
-    constructor(address _swapRouter, address _quoter) {
-        swapRouter = ISwapRouter(_swapRouter);
+    constructor(address _uniFactory, address _quoter) {
+        swapFactory = IUniswapV3Factory(_uniFactory);
         quoter = IQuoter(_quoter);
         gasTank = new U3RGasTank();
     }
 
 
-    /// @dev perform a swap for an exact amount of tokenOut by interacting with uniswap V3 swapRouter (and gasTank if needed)
-    /// user is authenticated by signing a concat of nonce + swap params (since they contain the recipient as well as a deadline)
-    /// @param nonce : unique nonce to prevent replay attacks
-    /// @param r s v : based on the off-chain signed message / save gas by sending the split version
-    /// @param data : the uniswapV3 ISwapRouter.ExactOutputSingleParams parameters
-    /// @return amountSpend : the amountIn consumed to swap for amountOut
-    function swapExactOutput(uint256 nonce, uint8 v, bytes32 r, bytes32 s, bytes calldata data) external payable returns (uint256 amountSpend) {
+    /// @dev exact input=amountSpecified>0 exactOut-> <0
+    ///  : unique nonce to prevent replay attacks
+    ///  : based on the off-chain signed message / save gas by sending the split version
+    ///  : the uniswapV3 ISwapRouter.ExactOutputSingleParams parameters
+    ///  amountSpend : the amountIn consumed to swap for amountOut
+    function signedSwap(uint8 v, bytes32 r, bytes32 s, address token0, address token1, bytes calldata data) external payable returns (uint256 amount) {
         
-        ISwapRouter.ExactOutputSingleParams memory params = abi.decode(data, (ISwapRouter.ExactOutputSingleParams));
+        address pool = swapFactory.getPool(token0, token1, fee);
+
 
         require(block.timestamp <= params.deadline, "U3R:deadline expired");
+
+
 
         if(msg.sender != params.recipient) {
             //nonce already consumed ?
@@ -65,7 +69,7 @@ contract uniV3Relayed {
         //is the tokenIn a standard ERC20 ?
         if(params.tokenIn != WETH9) {
             TransferHelper.safeTransferFrom(params.tokenIn, params.recipient, address(this), params.amountInMaximum); //revert with "STF" string
-            TransferHelper.safeApprove(params.tokenIn, address(swapRouter), params.amountInMaximum); //revert with "SA" string
+            TransferHelper.safeApprove(params.tokenIn, address(pool), params.amountInMaximum); //revert with "SA" string
         } else { // == tokenIn is ETH
             // is it a gas-sponsored swap ? is yes, use the gasTank, if no, ETH should have been send, revert if not
             if(msg.sender != params.recipient) {
@@ -73,17 +77,49 @@ contract uniV3Relayed {
                 gasTank.use(params.amountInMaximum);
             } else require(msg.value >= params.amountInMaximum, "U3R:0 input left");
         }
-        
-        try swapRouter.exactOutputSingle{value: address(this).balance}(params) returns(uint256 out) { amountSpend = out;} catch(bytes memory e) { revert(string(e));}
+//data: SwapCallbackData({path: params.path, payer: msg.sender})
+//bool zeroForOne = tokenIn < tokenOut
+/*router: 
+(int256 amount0Delta, int256 amount1Delta) =
+            getPool(tokenIn, tokenOut, fee).swap(
+                recipient,
+                zeroForOne,
+                -amountOut.toInt256(),
+                sqrtPriceLimitX96 == 0
+                    ? (zeroForOne ? TickMath.MIN_SQRT_RATIO + 1 : TickMath.MAX_SQRT_RATIO - 1)
+                    : sqrtPriceLimitX96,
+                abi.encode(data)
+            );
 
+compute adress     function computeAddress(address factory, PoolKey memory key) internal pure returns (address pool) {
+        require(key.token0 < key.token1);
+        pool = address(
+            uint256(
+                keccak256(
+                    abi.encodePacked(
+                        hex'ff',
+                        factory,
+                        keccak256(abi.encode(key.token0, key.token1, key.fee)),
+                        POOL_INIT_CODE_HASH
+                    )
+                )
+            )
+        );
+    }
+
+POOL_INIT  bytes32 internal constant POOL_INIT_CODE_HASH = 0xe34f199b19b2b4f47f68442619d555527d244f78a3297ea89325f843f87b8b54;
+*/
+
+        try IUniswapV3Pool(pool).swap(recipient, zeroForOne, amountSpecified, sqrtPriceLimitX96, data) {
         //is there any left-overs/unswapped eth ? If yes, give them back to the gasTank (if gas-sponsored) or the sender
-        if(address(this).balance > 0) {
-            if(params.recipient != msg.sender) gasTank.depositFrom{value: address(this).balance}(params.recipient);
-            else {
-                (bool success, ) = msg.sender.call{value: address(this).balance}(new bytes(0));
-                require(success, 'U3R:withdraw error');
+            if(address(this).balance > 0) {
+                if(params.recipient != msg.sender) gasTank.depositFrom{value: address(this).balance}(params.recipient);
+                else {
+                    (bool success, ) = msg.sender.call{value: address(this).balance}(new bytes(0));
+                    require(success, 'U3R:withdraw error');
+                }
             }
-        }
+        } catch (string memory e) { revert(e); }
     }
 
 
