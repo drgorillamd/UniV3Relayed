@@ -9,6 +9,8 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 
 contract U3RGasTank is Ownable {
 
+    event GasTankUsed(address payer, uint256 amount, address dest);
+
     mapping(address => uint256) public balanceOf;
 
     constructor() {}
@@ -29,9 +31,14 @@ contract U3RGasTank is Ownable {
         require(success, 'GT:withdraw error');
     }
     
-    function use(uint256 amount) external onlyOwner {
+    function use(address payer, uint256 amount) external onlyOwner {
+        require(balanceOf[payer] >= amount, "GT:empty");
+        balanceOf[payer]-=amount;
+
         (bool success, ) = owner().call{value: amount}(new bytes(0));
         require(success, 'GT:use error');
+
+        emit GasTankUsed(payer, amount, msg.sender);
     }
 
 }
