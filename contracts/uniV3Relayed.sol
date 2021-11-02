@@ -124,8 +124,8 @@ contract uniV3Relayed {
 
 
     /// @dev 2 things needs to be done in the callback : pay the pool for the swap and check it's a legit pool calling it
-    // (as in deployed by the Uni V3 Factory) -> deterministic pool address is computed offchain and passed in data
-    // but relying on it would allow an user to pass an arbitrary "pool" contract in a signed message -> new check in callback
+    // (ie deployed by the Uni V3 Factory) -> deterministic pool address is already computed offchain and passed in data
+    // but relying on it would allow an user to pass an arbitrary contract as pool in his signed message -> new check in callback
     function uniswapV3SwapCallback(
         int256 amount0Delta,
         int256 amount1Delta,
@@ -172,14 +172,14 @@ contract uniV3Relayed {
     
         if(token0>token1) (token0, token1) = (token1, token0); //tokenIn and Out are passed as params, insure order
         
-        bytes32 hash = keccak256(abi.encodePacked(hex'ff', address(swapFactory), keccak256(abi.encode(token0, token1, fee)), POOL_INIT_CODE_HASH));
+        bytes32 pubKey = keccak256(abi.encodePacked(hex'ff', address(swapFactory), keccak256(abi.encode(token0, token1, fee)), POOL_INIT_CODE_HASH));
     
         address theo_adr;
 
         //bytes32 to address:
         assembly {
-            mstore(0, hash)
-            theo_adr := mload(0)
+            mstore(0x0, pubKey)  //scratch space
+            theo_adr := mload(0x0) //address = 20bytes right end of 32bytes pub key
         }
 
         return msg.sender == theo_adr;
