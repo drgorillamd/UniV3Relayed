@@ -37,7 +37,7 @@ contract uniV3Relayed {
     address WETH9_ADR = address(0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2);
     IWeth IWETH9 = IWeth(WETH9_ADR);
 
-    mapping(address=>uint88) public nonces;
+    mapping(address=>uint256) public nonces;
 
     IUniswapV3Factory public immutable swapFactory;
     IQuoter public immutable quoter;
@@ -50,17 +50,17 @@ contract uniV3Relayed {
     }
 
     struct SwapData {
-        uint256 exactInOrOut;
+        uint256 exactInOrOut; //32
         uint256 amountMinOutOrMaxIn; //based on exactIn bool  32
         uint256 deadline;  //32
+        uint256 nonce; //32
         address pool; //20
-        bool exactIn; //1
-        uint88 nonce; //11
-        uint160 sqrtPriceLimitX96; //5
         address tokenIn; //20
         address tokenOut; //20
         address recipient; //20
+        uint160 sqrtPriceLimitX96; //5
         uint24 fee; //3
+        bool exactIn; //1 -> 89
     }
 
     struct SwapCallbackData {

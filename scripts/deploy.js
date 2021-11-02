@@ -1,5 +1,5 @@
 async function main() {
-  const router_address = '0xE592427A0AEce92De3Edee1F18E0157C05861564';
+  const factory_address = '0x1F98431c8aD98523631AE4a59f267346ea31F984';
   const quoter_address = '0xb27308f9F90D607463bb33eA1BeBb41C27CE5AB6';
   const [deployer] = await ethers.getSigners();
 
@@ -10,7 +10,7 @@ async function main() {
   console.log("Chain id:", (await deployer.getChainId()));
 
   const Contract = await ethers.getContractFactory("uniV3Relayed");
-  const contract = await Contract.deploy(router_address, quoter_address);
+  const contract = await Contract.deploy(factory_address, quoter_address);
 
   console.log("Contract address:", contract.address);
 }
