@@ -65,21 +65,6 @@ contract uniV3Relayed {
         uint24 fee; //3
     }
 
-
-    struct SwapDataF {
-        uint256 exactInOrOut; //32
-        uint256 amountMinOutOrMaxIn; //based on exactIn bool  32
-        uint256 deadline;  //32
-        uint256 nonce; //32
-        address pool; //20
-        uint160 sqrtPriceLimitX96; //5
-        bool exactIn; //1 -> 89
-        address tokenIn; //20
-        address tokenOut; //20
-        address recipient; //20
-        uint24 fee; //3
-    }
-
     function relayedSwap(uint8 v, bytes32 r, bytes32 s, bytes memory _data) external payable returns (uint256 amount) {
 
         (bytes memory a, bytes memory b) = abi.decode(_data, (bytes, bytes));
