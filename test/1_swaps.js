@@ -122,7 +122,7 @@ describe("U3R: DAI->USDC", function () {
     const IPool = new ethers.Contract(pool, slot0abi, provider);
     const slot0data = await IPool.slot0();
     const curr_tick = slot0data.tick;
-    const quoteInUSDC = ethers.BigNumber.from((amountIn * (1.0001**curr_tick)).toString());
+    const quoteInUSDC = ethers.BigNumber.from(Math.floor(amountIn * (1.0001**curr_tick)));
     console.log("quote: 4000 DAI <=> "+(quoteInUSDC/10**6)+" USDC");
     const minOutInUSDC = quoteInUSDC.sub(quoteInUSDC.mul(5).div(100));
 
