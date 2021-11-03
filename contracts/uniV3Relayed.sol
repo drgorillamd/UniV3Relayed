@@ -27,8 +27,6 @@ interface IWeth {
 
 contract uniV3Relayed {
 
-    uint256 internal amountIn_cached = ~uint256(0);
-
     /// @dev The minimum value that can be returned from #getSqrtRatioAtTick. Equivalent to getSqrtRatioAtTick(MIN_TICK)
     uint160 internal constant MIN_SQRT_RATIO = 4295128739;
 
@@ -137,7 +135,6 @@ contract uniV3Relayed {
             pay(data.tokenIn, data.recipient, msg.sender, amountToPay);
 
         } else { //only mono-pool swaps
-            amountIn_cached = amountToPay;
             // swap in/out because exact output swaps are reversed
             pay(data.tokenOut, data.recipient, msg.sender, amountToPay);
         }
