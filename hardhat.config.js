@@ -1,5 +1,6 @@
 require("@nomiclabs/hardhat-waffle");
 require("hardhat-gas-reporter");
+require("@tenderly/hardhat-tenderly");
 require('dotenv').config();
 
 // This is a sample Hardhat task. To learn how to create your own go to
@@ -25,6 +26,10 @@ task("accounts", "Prints the list of accounts", async (taskArgs, hre) => {
       forking: {
         url: process.env.ETH_PROV,
       }
+    },
+    goerli: {
+      url: process.env.GOERLI_PROV,
+      accounts: [process.env.GOERLI_KEY]
     }
   }
 };

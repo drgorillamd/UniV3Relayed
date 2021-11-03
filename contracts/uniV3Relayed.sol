@@ -1,11 +1,11 @@
 //SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
+pragma experimental ABIEncoderV2;
 
 import "hardhat/console.sol";
 
 import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Factory.sol";
-import "@uniswap/v3-periphery/contracts/interfaces/IQuoter.sol";
 import "@uniswap/v3-periphery/contracts/libraries/TransferHelper.sol";
 import "./U3RGasTank.sol";
 
@@ -31,6 +31,7 @@ contract uniV3Relayed {
 
     /// @dev The minimum value that can be returned from #getSqrtRatioAtTick. Equivalent to getSqrtRatioAtTick(MIN_TICK)
     uint160 internal constant MIN_SQRT_RATIO = 4295128739;
+
     /// @dev The maximum value that can be returned from #getSqrtRatioAtTick. Equivalent to getSqrtRatioAtTick(MAX_TICK)
     uint160 internal constant MAX_SQRT_RATIO = 1461446703485210103287273052203988822378723970342;
 
@@ -40,12 +41,10 @@ contract uniV3Relayed {
     mapping(address=>uint256) public nonces;
 
     IUniswapV3Factory public immutable swapFactory;
-    IQuoter public immutable quoter;
     U3RGasTank public immutable gasTank;
 
-    constructor(address _uniFactory, address _quoter) {
+    constructor(address _uniFactory) {
         swapFactory = IUniswapV3Factory(_uniFactory);
-        quoter = IQuoter(_quoter);
         gasTank = new U3RGasTank();
     }
 
@@ -55,11 +54,7 @@ contract uniV3Relayed {
         uint256 deadline;  //32
         uint256 nonce; //32
         address pool; //20
-        address tokenIn; //20
-        address tokenOut; //20
-        address recipient; //20
         uint160 sqrtPriceLimitX96; //5
-        uint24 fee; //3
         bool exactIn; //1 -> 89
     }
 
@@ -70,50 +65,61 @@ contract uniV3Relayed {
         uint24 fee; //3
     }
 
-    /// @dev exact input=amountSpecified>0 exactOut-> <0
-    ///  : unique nonce to prevent replay attacks
-    ///  : based on the off-chain signed message / save gas by sending the split version
-    ///  : the uniswapV3 ISwapRouter.ExactOutputSingleParams parameters
-    ///  amountSpend : the amountIn consumed to swap for amountOut
-    function signedSwap(uint8 v, bytes32 r, bytes32 s, SwapData calldata params) external payable returns (uint256 amount) {
 
-        //address pool = swapFactory.getPool(token0, token1, fee); //to test gas consumption versus SwapData or recompute the pool address
-        require(params.exactInOrOut < 2**255, "U3R: int overflow");
+    struct SwapDataF {
+        uint256 exactInOrOut; //32
+        uint256 amountMinOutOrMaxIn; //based on exactIn bool  32
+        uint256 deadline;  //32
+        uint256 nonce; //32
+        address pool; //20
+        uint160 sqrtPriceLimitX96; //5
+        bool exactIn; //1 -> 89
+        address tokenIn; //20
+        address tokenOut; //20
+        address recipient; //20
+        uint24 fee; //3
+    }
+
+    function relayedSwap(uint8 v, bytes32 r, bytes32 s, bytes memory _data) external payable returns (uint256 amount) {
+
+        (bytes memory a, bytes memory b) = abi.decode(_data, (bytes, bytes));
+        (SwapData memory params) = abi.decode(a, (SwapData));
+        (SwapCallbackData memory callbackData) = abi.decode(b, (SwapCallbackData));
+
+        require(params.exactInOrOut < 2**255, "U3R:int256 overflow");
         require(block.timestamp <= params.deadline, "U3R:deadline expired");
 
         int256 exactInOrOut = int256(params.exactInOrOut);
-        bool zeroForOne = params.tokenIn < params.tokenOut;
+        bool zeroForOne = callbackData.tokenIn < callbackData.tokenOut;
 
         //nonce already consumed ?
-        require(params.nonce == nonces[params.recipient], "U3R:sig:invalid nonce");
+        require(params.nonce == nonces[callbackData.recipient], "U3R:sig:invalid nonce");
 
         //recreating the message...
-        bytes32 digest = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", keccak256(abi.encode(params))));
+        bytes32 digest = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", keccak256(_data)));
         address signer =  ecrecover(digest, v, r, s);
         
         //...to check if the swap recipient is the signer
         require(signer != address(0), "U3R:sig:invalid signature");
-        require(params.recipient == signer, "U3R:sig:signer dest mismatch");
-        nonces[params.recipient]++;
+        require(callbackData.recipient == signer, "U3R:sig:signer dest mismatch");
+        nonces[callbackData.recipient]++;
 
-        SwapCallbackData memory callBackParams = SwapCallbackData({tokenIn: params.tokenIn, tokenOut: params.tokenOut, recipient: params.recipient, fee: params.fee});
 
         try IUniswapV3Pool(params.pool).swap(
-            params.recipient, 
+            callbackData.recipient, 
             zeroForOne,
             params.exactIn ? exactInOrOut : -exactInOrOut,  //exactIn-> int256(amountIn); exactOut-> -amountOut.toInt256(),
             params.sqrtPriceLimitX96 == 0 ? (zeroForOne ? MIN_SQRT_RATIO + 1 : MAX_SQRT_RATIO - 1) : params.sqrtPriceLimitX96, 
-            abi.encode(callBackParams)
+            abi.encode(callbackData)
         ) returns (int256 amount0, int256 amount1) {
             //is there any left-overs/unswapped eth ? If yes, give them back to the gasTank (if gas-sponsored) or the sender
             if(address(this).balance > 0) {
-                if(params.recipient != msg.sender) gasTank.depositFrom{value: address(this).balance}(params.recipient);
+                if(callbackData.recipient != msg.sender) gasTank.depositFrom{value: address(this).balance}(callbackData.recipient);
                 else {
                     (bool success, ) = msg.sender.call{value: address(this).balance}(new bytes(0));
                     require(success, 'U3R:withdraw error');
                 }
             }
-
 
             if(params.exactIn) amount = zeroForOne ? uint256(-amount0) : uint256(-amount1);
             else amount = zeroForOne ? (uint256(amount0)) : (uint256(amount1));
@@ -182,22 +188,11 @@ contract uniV3Relayed {
             theo_adr := mload(0x0) //address = 20bytes right end of 32bytes pub key
         }
 
+        console.log(msg.sender);
+        console.log(theo_adr);
+
         return msg.sender == theo_adr;
     }
-
-
-// ---------------- replace by slot0 offchain
-
-    /// @dev DO NOT use in a contract/send a tx to this -> use static calls only (not gas optimized on uniswap end)
-    /// either amountIn or amountOut should be 0 and swap direction is then guessed based on it
-    function getQuote(address tokenIn, address tokenOut, uint24 fee, uint256 amountIn, uint256 amountOut) external returns (uint256) {
-        require( (amountIn == 0 || amountOut == 0) && amountIn != amountOut, "U3R:getQuote: provide one 0 amount"); //solidity logic xor
-
-        if(amountIn > amountOut) return quoter.quoteExactInputSingle(tokenIn, tokenOut, fee, amountIn, 0);
-        else return quoter.quoteExactOutputSingle(tokenIn, tokenOut, fee, amountOut, 0);
-
-    }
-
 
     receive() external payable {
     }
