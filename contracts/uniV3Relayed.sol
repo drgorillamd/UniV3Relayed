@@ -114,7 +114,8 @@ contract uniV3Relayed {
 
     /// @dev 2 things needs to be done in the callback : pay the pool for the swap and check it's a legit pool calling it
     // (ie deployed by the Uni V3 Factory) -> deterministic pool address is already computed offchain and passed in data
-    // but relying on it would allow an user to pass an arbitrary contract as pool in his signed message -> new check in callback
+    // but relying on it would allow an user to pass an arbitrary contract as pool in his signed message then call callback
+    // -> new check in callback
     function uniswapV3SwapCallback(
         int256 amount0Delta,
         int256 amount1Delta,
