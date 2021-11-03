@@ -1,7 +1,8 @@
 const { expect } = require("chai");
 const { ethers, waffle } = require("hardhat");
 
-const factory_address = '0x1F98431c8aD98523631AE4a59f267346ea31F984';
+const UNI_FACTORY = '0x1F98431c8aD98523631AE4a59f267346ea31F984';
+const POOL_INIT_CODE_HASH = '0xe34f199b19b2b4f47f68442619d555527d244f78a3297ea89325f843f87b8b54'
 
 const DAI = '0x6B175474E89094C44Da98b954EedeAC495271d0F';
 const WETH9 = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2';
@@ -16,147 +17,195 @@ let provider;
 
 before(async function () {
   const Fact = await ethers.getContractFactory("uniV3Relayed");
-  U3R = await Fact.deploy(factory_address);
+  U3R = await Fact.deploy(UNI_FACTORY);
 
   const gasFactory = await ethers.getContractFactory("U3RGasTank");
   const gas_address = await U3R.gasTank();
-  gasTank = await gasFactory.attach(gas_address);
+  gasTank = gasFactory.attach(gas_address);
 
   provider = waffle.provider;
   [owner] = await ethers.getSigners();
 
   user = ethers.Wallet.createRandom().connect(provider);
   await owner.sendTransaction({to: user.address, value: GWEI.mul('100')});
+
   console.log("signer : "+user.address);
 });
 
-describe("U3R: ETH->DAI", function () {
-  it("Control deployed version: nonce == 0 ?", async function () {
-    expect(await U3R.nonces(user.address)).to.equal(0);
-  });
+describe("U3R: ETH -> exact 4000 DAI @ 0.3%", function () {
 
-  it("Swap ETH for output of 4000DAI via pool 0.3%", async function () {
-    // -- payload --
-    const deadline = Date.now()+60;
-    const amountOut = GWEI.mul(4000);
-    const dest = user.address;
-    const curr_nonce = await U3R.nonces(dest);
-    const sqrtPriceLim = 0;
-    const fees = 3000;
-    const exactIn = false;
+  let deadline;
+  let amountOut;
+  let curr_nonce;
+  let sqrtPriceLim;
+  let fees;
+  let exactIn;
+  let pool;
+  let quoteInETH;
+  let quoteWithSlippage;
+  let sig;
+  let full_payload;
 
-    // -- compute pool address --
-    const factory = '0x1F98431c8aD98523631AE4a59f267346ea31F984'
-    const POOL_INIT_CODE_HASH = '0xe34f199b19b2b4f47f68442619d555527d244f78a3297ea89325f843f87b8b54'
+  it("set payload+nonce", async function () { 
+    deadline = Date.now()+60;
+    amountOut = GWEI.mul(4000);
+    curr_nonce = await U3R.nonces(user.address);
+    sqrtPriceLim = 0;
+    fees = 3000;
+    exactIn = false;
+    expect(curr_nonce).to.equal(0);
+  })
+
+  it("compute pool address", async function () {
     const key = ethers.utils.keccak256(ethers.utils.defaultAbiCoder.encode([ "address", "address", "uint24"], [DAI, WETH9, fees]));
-    const keccak = ethers.utils.solidityKeccak256(["bytes", "address", "bytes", "bytes32"], ["0xff", factory, key, POOL_INIT_CODE_HASH]);
+    const keccak = ethers.utils.solidityKeccak256(["bytes", "address", "bytes", "bytes32"], ["0xff", UNI_FACTORY, key, POOL_INIT_CODE_HASH]);
     // keccak is 64 hex digit/nibbles == 32 bytes -> take rightmost 20 bytes=40 nibbles -> start at 64-40=24nibbles or 12 bytes
-    const pool = ethers.utils.hexDataSlice(keccak, 12);
+    pool = ethers.utils.hexDataSlice(keccak, 12);
+    expect(pool).to.equals('0xc2e9f25be6257c210d7adf0d4cd6e3e881ba25f8');
+  }),
 
-    // -- retrieve price from slot0 (based on 1.0001^current tick) --
+  it("retrieve price from slot0", async function () { 
     const slot0abi = ["function slot0() external view returns (uint160 sqrtPriceX96, int24 tick, uint16 observationIndex, uint16 observationCardinality, uint16 observationCardinalityNext, uint8 feeProtocol, bool unlocked)"];
     const IPool = new ethers.Contract(pool, slot0abi, provider);
     const slot0data = await IPool.slot0();
     const curr_tick = slot0data.tick;
-    const quoteInETH = ethers.BigNumber.from(((amountOut * (1.0001**curr_tick))).toString());
-    const quoteWithSlippage = quoteInETH.add(quoteInETH.mul(5).div(100));    
+    quoteInETH = ethers.BigNumber.from(((amountOut * (1.0001**curr_tick))).toString());
+    quoteWithSlippage = quoteInETH.add(quoteInETH.mul(5).div(100));    
     console.log("quote: 4000 DAI <=> "+(quoteInETH/10**18)+" ETH");
+    expect(quoteInETH).to.be.not.null; // check the console.log -- todo: compare with price api
+  }),
 
+  it("payload packing and signing", async function () { 
     // -- payload abi encoding --
     const swapParams = ethers.utils.defaultAbiCoder.encode(
         ["tuple(uint256, uint256, uint256,  uint256, address,  uint160, bool)"],
         [[amountOut, quoteWithSlippage, deadline, curr_nonce,  pool,    sqrtPriceLim,  exactIn]]);
     const callbackData = ethers.utils.defaultAbiCoder.encode(
         ["tuple(address, address, address, uint24)"],
-        [[WETH9,       DAI,      dest,      fees]]);
-    const full_payload = ethers.utils.defaultAbiCoder.encode(["bytes", "bytes"], [swapParams, callbackData]);
-
+        [[WETH9,       DAI,      user.address,      fees]]);
+    full_payload = ethers.utils.defaultAbiCoder.encode(["bytes", "bytes"], [swapParams, callbackData]);
 
     // -- hash and sign --
     const messageHashBytes = ethers.utils.keccak256(full_payload);
     const flatSig = await user.signMessage(ethers.utils.arrayify(messageHashBytes));
-    const sig = ethers.utils.splitSignature(flatSig);
+    sig = ethers.utils.splitSignature(flatSig);
+  }),
 
+  it("send ETH to gasTank", async function () { 
     // -- fill gasTank (only for swap FROM eth, since no allowance possible without wrapping) --
     await gasTank.connect(user).deposit({value: quoteWithSlippage});
+    expect(await gasTank.balanceOf(user.address)).to.equals(quoteWithSlippage);
+  }),
 
-    // -- gather returned value --
+  it("value returned by static call to swap function", async function () { 
     const eth_swapped = await U3R.connect(owner).callStatic.relayedSwap(sig.v, sig.r, sig.s, full_payload);
+    expect(eth_swapped).to.be.closeTo(quoteInETH, quoteWithSlippage.sub(quoteInETH)); // = quote was correct, with margin of error = slippage
+  }),
 
-    // -- actual tx --
-    const eth_balance_before = await provider.getBalance(dest);
+  it("Actual swap->new balances ?", async function () { 
+    const eth_balance_before = await provider.getBalance(user.address);
     const tx = await U3R.connect(owner).relayedSwap(sig.v, sig.r, sig.s, full_payload);
     await tx.wait();
-    const eth_balance_after = await provider.getBalance(dest);
+    const eth_balance_after = await provider.getBalance(user.address);
 
-    expect(eth_swapped).to.be.closeTo(quoteInETH, quoteWithSlippage.sub(quoteInETH)); // = quote was correct, with margin of error = slippage
-    expect(eth_balance_after).to.be.equals(eth_balance_before); // = no gas spend
-  }) 
+    const DAI_contract = new ethers.Contract(DAI, ["function balanceOf(address) external view returns (uint256)"], user);
+    const DAI_balance = await DAI_contract.balanceOf(user.address);
+    console.log("DAI balance: "+DAI_balance/10**18);
+    
+    expect(DAI_balance).to.be.equals((4000*10**18).toLocaleString('fullwide', {useGrouping:false})); // = quote was correct, with margin of error = slippage
+    expect(eth_balance_after).equals(eth_balance_before); // = no gas spend
+  })
 });
 
 
-describe("U3R: DAI->CRV", function () {
+describe("U3R: exact 4000 DAI -> RAI @ 0.05%", function () {
 
-  it("Swap exact DAI (4000) for RAI via pool 0.05%", async function () {
+  let deadline;
+  let amountIn;
+  let curr_nonce;
+  let sqrtPriceLim;
+  let fees;
+  let exactIn;
+  let pool;
+  let quoteInDAI;
+  let minOutInRAI;
+  let sig;
+  let full_payload;
 
-    // -- swap payload --
-    const fees = 500;
-    const deadline = Date.now()+60;
-    const amountIn = GWEI.mul('4000');
-    const dest = user.address;
-    const curr_nonce = await U3R.nonces(dest);
-    const exactIn = true;
-    const sqrtPriceLim = 0;
+  it("set payload+nonce", async function () { 
+    fees = 500;
+    deadline = Date.now()+60;
+    amountIn = GWEI.mul('4000');
+    curr_nonce = await U3R.nonces(user.address);
+    exactIn = true;
+    sqrtPriceLim = 0;
+    expect(curr_nonce).to.equal('1');
+  }),
 
+  it("compute pool address", async function () {
     // -- compute pool address --
-    const factory = '0x1F98431c8aD98523631AE4a59f267346ea31F984'
     const POOL_INIT_CODE_HASH = '0xe34f199b19b2b4f47f68442619d555527d244f78a3297ea89325f843f87b8b54'
     const key = ethers.utils.keccak256(ethers.utils.defaultAbiCoder.encode([ "address", "address", "uint24"], [RAI, DAI, fees]));
-    const keccak = ethers.utils.solidityKeccak256(["bytes", "address", "bytes", "bytes32"], ["0xff", factory, key, POOL_INIT_CODE_HASH]);
+    const keccak = ethers.utils.solidityKeccak256(["bytes", "address", "bytes", "bytes32"], ["0xff", UNI_FACTORY, key, POOL_INIT_CODE_HASH]);
     // keccak is 64 hex digit/nibbles == 32 bytes -> take rightmost 20 bytes=40 nibbles -> start at 64-40=24nibbles or 12 bytes
-    const pool = ethers.utils.hexDataSlice(keccak, 12);
+    pool = ethers.utils.hexDataSlice(keccak, 12);
+    expect(pool).equals('0xcb0c5d9d92f4f2f80cce7aa271a1e148c226e19d');
+  }),
 
+  it("retrieve price from slot0", async function () { 
     // -- retrieve price from slot0 (based on 1.0001^current tick) --
     const slot0abi = ["function slot0() external view returns (uint160 sqrtPriceX96, int24 tick, uint16 observationIndex, uint16 observationCardinality, uint16 observationCardinalityNext, uint8 feeProtocol, bool unlocked)"];
     const IPool = new ethers.Contract(pool, slot0abi, provider);
     const slot0data = await IPool.slot0();
     const curr_tick = slot0data.tick;
-    //const quoteInRAI = ethers.BigNumber.from( ((amountIn/1.0001**curr_tick)) );
-    const quoteInRAI = ethers.BigNumber.from( (amountIn/1.0001**curr_tick).toLocaleString('fullwide', {useGrouping:false}) ); // P=token0/token1 -> RAI per DAI
-    console.log("quote: 4000 DAI <=> "+(quoteInRAI/10**18)+" CRV");
-    const minOutInRAI = quoteInRAI.sub(quoteInRAI.mul(5).div(100));
+    quoteInDAI = ethers.BigNumber.from( (amountIn/1.0001**curr_tick).toLocaleString('fullwide', {useGrouping:false}) ); // P=token0/token1 -> RAI per DAI
+    console.log("quote: 4000 DAI <=> "+(quoteInDAI/10**18)+" CRV");
+    minOutInRAI = quoteInDAI.sub(quoteInDAI.mul(5).div(100));
+    expect(quoteInDAI).to.be.not.null; // check the console.log -- todo: compare with price api
+  }),
 
-    // -- payload abi encoding --
+  it("payload packing and signing", async function () { 
     const swapParams = ethers.utils.defaultAbiCoder.encode(
       ["tuple(uint256, uint256, uint256,  uint256, address,  uint160, bool)"],
       [[amountIn, minOutInRAI, deadline, curr_nonce,  pool,    sqrtPriceLim,  exactIn]]);
     const callbackData = ethers.utils.defaultAbiCoder.encode(
       ["tuple(address, address, address, uint24)"],
-      [[DAI,       RAI,      dest,      fees]]);
-    const full_payload = ethers.utils.defaultAbiCoder.encode(["bytes", "bytes"], [swapParams, callbackData]);
+      [[DAI,       RAI,      user.address,      fees]]);
+    full_payload = ethers.utils.defaultAbiCoder.encode(["bytes", "bytes"], [swapParams, callbackData]);
 
     // -- hash and sign --
     const messageHashBytes = ethers.utils.keccak256(full_payload);
     const flatSig = await user.signMessage(ethers.utils.arrayify(messageHashBytes));
-    const sig = ethers.utils.splitSignature(flatSig);
+    sig = ethers.utils.splitSignature(flatSig);
+  }),
 
-
-    // -- approve dai spending by U3R contract --
-    const approve_abi = ["function approve(address spender, uint256 amount) external returns (bool)"];
+  it("DAI approval", async function () { 
+    const approve_abi = ["function approve(address spender, uint256 amount) external returns (bool)",
+                          "function allowance(address, address) external view returns (uint256)"];
     const dai_contract = new ethers.Contract(DAI, approve_abi, user);
     const apr_tx = await dai_contract.approve(U3R.address, amountIn);
     await apr_tx.wait();
+    const new_allowance = await dai_contract.allowance(user.address, U3R.address);
+    expect(new_allowance).equals(amountIn);
+  }),
 
-    // -- returned value --
+  it("value returned by static call to swap function", async function () { 
     const RAI_received = await U3R.connect(owner).callStatic.relayedSwap(sig.v, sig.r, sig.s, full_payload);
+    expect(RAI_received).to.be.closeTo(quoteInDAI, quoteInDAI.sub(minOutInRAI)); // correct quote
+  }),
 
-    // -- actual tx --
-    const eth_balance_before = await provider.getBalance(dest);
+  it("Actual swap->new balances ?", async function () { 
+    const eth_balance_before = await provider.getBalance(user.address);
     const tx = await U3R.connect(owner).relayedSwap(sig.v, sig.r, sig.s, full_payload);
     await tx.wait();
-    const eth_balance_after = await provider.getBalance(dest);
+    const eth_balance_after = await provider.getBalance(user.address);
 
-    expect(RAI_received).to.be.closeTo(quoteInRAI, quoteInRAI.sub(minOutInRAI)); // correct quote
+    const RAI_contract = new ethers.Contract(RAI, ["function balanceOf(address) external view returns (uint256)"], user);
+    const RAI_balance = await RAI_contract.balanceOf(user.address);
+    console.log("RAI balance: "+RAI_balance/10**18);
+
+
+    expect(RAI_balance).to.be.closeTo(quoteInDAI, quoteInDAI.sub(minOutInRAI)); // correct swap
     expect(eth_balance_after).to.be.equals(eth_balance_before); // 0 gas spend
   })
-});
+})
