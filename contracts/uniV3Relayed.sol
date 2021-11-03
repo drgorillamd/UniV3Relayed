@@ -121,7 +121,7 @@ contract uniV3Relayed {
                 }
             }
 
-            if(params.exactIn) amount = zeroForOne ? uint256(-amount0) : uint256(-amount1);
+            if(params.exactIn) amount = zeroForOne ? uint256(-amount1) : uint256(-amount0);
             else amount = zeroForOne ? (uint256(amount0)) : (uint256(amount1));
 
 
