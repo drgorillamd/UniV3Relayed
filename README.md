@@ -20,11 +20,3 @@ Alice sends this message to Bob, along with her swap payload.
 
 Bob verify the authenticity of the message (which needs to have been signed by the swap recipient).
 Bob then swap, based on the payload received with the signed message.
-
-
-## Eth-case
-ETH being wrapped by uniswap, U3R is using an external contract, gasTank, to store eth from the users and use them when needed (this is the only part where one user has to pay for gas)
-
-
-# rem
-this can, ofc, have been easily done using openGSN or flashbot sponsored-tx
