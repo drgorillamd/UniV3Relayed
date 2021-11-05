@@ -21,7 +21,7 @@ interface IERC20Bal {
 
 /// @title Uniswap V3 Relayed swaps (U3R)
 /// @author DrGorilla.eth
-/// @dev implementation of third-party gas sponsoring for Uniswap V3 single input and output (complexes routes are trivial to implement from there)
+/// @dev implementation of third-party gas sponsoring for Uniswap V3 single input and output
 /// 2 scenarios are treated: swaps from a standard ERC20 token and swap from eth
 /// since uniswap handles the weth wrapping, swap from eth is done via the use of an external
 /// contract (the GasTank), deployed and owned by the main U3R contract - alternative would be the sender wrapping her ETH to approve/transferFrom,
