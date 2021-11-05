@@ -110,7 +110,12 @@ contract uniV3Relayed {
             else require(amount <= params.amountMinOutOrMaxIn, "U3R:max slippage");
 
             //send what we received to the recipient
-            uint256 received = IERC20Bal(callbackData.tokenOut).balanceOf(address(this));
+            (, bytes memory data) = callbackData.tokenOut.staticcall(abi.encodeWithSignature("balanceOf(address)", address(this)));
+            uint256 received;
+            assembly {
+                received := mload(add(data, 0x20))
+            }
+
             //TODO: compare gas cost of this call to recomparing what's in/out and was it exactIn/Out?
             if(callbackData.tokenOut == WETH9_ADR) {
                 IWETH9.withdraw(received);

@@ -110,9 +110,8 @@ describe("U3R: ETH -> exact 4000 DAI @ 0.3%", function () {
 
     const DAI_contract = new ethers.Contract(DAI, ["function balanceOf(address) external view returns (uint256)"], user);
     const DAI_balance = await DAI_contract.balanceOf(user.address);
-    console.log("DAI balance: "+DAI_balance/10**18);
     
-    expect(DAI_balance).to.be.equals((4000*10**18).toLocaleString('fullwide', {useGrouping:false})); // = quote was correct, with margin of error = slippage
+    expect(DAI_balance).to.be.equals((4000*10**18).toLocaleString('fullwide', {useGrouping:false}));
     expect(eth_balance_after).equals(eth_balance_before); // = no gas spend
   })
 });
@@ -159,7 +158,7 @@ describe("U3R: exact 4000 DAI -> RAI @ 0.05%", function () {
     const slot0data = await IPool.slot0();
     const curr_tick = slot0data.tick;
     quoteInDAI = ethers.BigNumber.from( (amountIn/1.0001**curr_tick).toLocaleString('fullwide', {useGrouping:false}) ); // P=token0/token1 -> RAI per DAI
-    console.log("quote: 4000 DAI <=> "+(quoteInDAI/10**18)+" CRV");
+    console.log("quote: 4000 DAI <=> "+(quoteInDAI/10**18)+"  RAI");
     minOutInRAI = quoteInDAI.sub(quoteInDAI.mul(5).div(100));
     expect(quoteInDAI).to.be.not.null; // check the console.log -- todo: compare with price api
   }),
@@ -203,7 +202,6 @@ describe("U3R: exact 4000 DAI -> RAI @ 0.05%", function () {
     const RAI_contract = new ethers.Contract(RAI, ["function balanceOf(address) external view returns (uint256)"], user);
     const RAI_balance = await RAI_contract.balanceOf(user.address);
     console.log("RAI balance: "+RAI_balance/10**18);
-
 
     expect(RAI_balance).to.be.closeTo(quoteInDAI, quoteInDAI.sub(minOutInRAI)); // correct swap
     expect(eth_balance_after).to.be.equals(eth_balance_before); // 0 gas spend
