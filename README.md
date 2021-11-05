@@ -8,7 +8,7 @@ Tests need to be run on a fork of ethereum mainnet, via :
     npm i
     npx hardhat test
     
-Mean swap gas consumption: 188k
+Mean swap gas consumption: 176k
 
 ## Research question:
 How can an user avoid paying for the gas for her swap using uniswap V3
