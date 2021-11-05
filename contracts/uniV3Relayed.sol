@@ -15,10 +15,6 @@ interface IWeth {
     function withdraw(uint256) external;
 }
 
-interface IERC20Bal {
-    function balanceOf(address) external returns (uint256);
-}
-
 /// @title Uniswap V3 Relayed swaps (U3R)
 /// @author DrGorilla.eth
 /// @dev implementation of third-party gas sponsoring for Uniswap V3 single input and output
