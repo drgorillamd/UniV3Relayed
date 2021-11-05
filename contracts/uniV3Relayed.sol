@@ -116,7 +116,7 @@ contract uniV3Relayed {
             //2) send it
             if(callbackData.tokenOut == WETH9_ADR) {
                 IWETH9.withdraw(received);
-                //swap already paid during callback at this point+nonce consumed, no reentrancy
+                //swap already paid during callback at this point+nonce consumed, no reentrancy:
                 (bool success, ) = callbackData.recipient.call{value: received}(new bytes(0));
                 require(success, 'U3R:withdraw error');
             }
@@ -183,15 +183,13 @@ contract uniV3Relayed {
         bytes32 POOL_INIT_CODE_HASH = 0xe34f199b19b2b4f47f68442619d555527d244f78a3297ea89325f843f87b8b54;
     
         if(token0>token1) (token0, token1) = (token1, token0); //tokenIn and Out are passed as params, insure order
-        
         bytes32 pubKey = keccak256(abi.encodePacked(hex'ff', address(swapFactory), keccak256(abi.encode(token0, token1, fee)), POOL_INIT_CODE_HASH));
-    
         address theo_adr;
 
         //bytes32 to address:
         assembly {
-            mstore(0x0, pubKey)  //scratch space
-            theo_adr := mload(0x0) //address = 20bytes right end of 32bytes pub key
+            mstore(0x0, pubKey)
+            theo_adr := mload(0x0)
         }
 
         return msg.sender == theo_adr;
