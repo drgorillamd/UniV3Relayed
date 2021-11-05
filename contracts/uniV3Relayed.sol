@@ -73,27 +73,18 @@ contract uniV3Relayed {
 
         (bytes memory a, bytes memory b) = abi.decode(_data, (bytes, bytes));
 
-        bool ctrl_len;
-
         //(SwapData memory params) = abi.decode(a, (SwapData));  -> 200 to 171k mean cost
         SwapData memory params;
         assembly {
-            let len
-            len := mload(mload(a))
-            ctrl_len := eq(len,0xE0) // 7 mem slots ?
+            if lt(eq(calldatasize(), 0x284), 1) { revert(0,0) }  //is _data bigger / trying to overwrite?
             params := add(mload(mload(a)), 0x20)
         }
-        require(ctrl_len, "U3R:invalid payload:a");
 
         //(SwapCallbackData memory callbackData) = abi.decode(b, (SwapCallbackData));
         SwapCallbackData memory callbackData;
         assembly {
-            let len
-            len := mload(mload(b))
-            ctrl_len := eq(len,0x80) // 4 mem slots?
             callbackData := add(mload(mload(b)), 0x20)
         }
-        require(ctrl_len, "U3R:invalid payload:b");
 
         require(params.exactInOrOut < 2**255, "U3R:int256 overflow");
         require(block.timestamp <= params.deadline, "U3R:deadline expired");
