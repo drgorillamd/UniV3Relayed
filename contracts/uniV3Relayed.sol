@@ -72,9 +72,6 @@ contract uniV3Relayed {
     function relayedSwap(uint8 v, bytes32 r, bytes32 s, bytes memory _data) external payable returns (uint256 amount) {
 
         (bytes memory a, bytes memory b) = abi.decode(_data, (bytes, bytes));
-        //(SwapData memory params) = abi.decode(a, (SwapData));
-        //(SwapCallbackData memory callbackData) = abi.decode(b, (SwapCallbackData));
-
 
          //(SwapCallbackData memory callbackData) = abi.decode(b, (SwapCallbackData));
         SwapCallbackData memory callbackData;
