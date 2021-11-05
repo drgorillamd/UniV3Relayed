@@ -73,6 +73,7 @@ contract uniV3Relayed {
 
         (bytes memory a, bytes memory b) = abi.decode(_data, (bytes, bytes));
 
+        //TODO: check for bytes length -> extra data/too long?->drop them
          //(SwapCallbackData memory callbackData) = abi.decode(b, (SwapCallbackData));
         SwapCallbackData memory callbackData;
         assembly {
@@ -84,6 +85,11 @@ contract uniV3Relayed {
         assembly {
             params := add(mload(mload(a)), 0x20)
         }
+
+        console.log(callbackData.tokenIn);
+        console.log(callbackData.tokenOut);
+        console.log(callbackData.recipient);
+        console.log(callbackData.fee);
 
         require(params.exactInOrOut < 2**255, "U3R:int256 overflow");
         require(block.timestamp <= params.deadline, "U3R:deadline expired");
