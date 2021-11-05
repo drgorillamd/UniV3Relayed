@@ -109,16 +109,18 @@ contract uniV3Relayed {
             if(params.exactIn) require(amount >= params.amountMinOutOrMaxIn, "U3R:max slippage");
             else require(amount <= params.amountMinOutOrMaxIn, "U3R:max slippage");
 
-            //send what we received to the recipient
+            //send what we received to the recipient:
+            // 1) what did we receive?
             (, bytes memory data) = callbackData.tokenOut.staticcall(abi.encodeWithSignature("balanceOf(address)", address(this)));
             uint256 received;
             assembly {
                 received := mload(add(data, 0x20))
             }
-
-            //TODO: compare gas cost of this call to recomparing what's in/out and was it exactIn/Out?
+            //TODO: compare gas cost of this staticcall to recomparing what's in/out and was it exactIn/Out?
+            //2) send it
             if(callbackData.tokenOut == WETH9_ADR) {
                 IWETH9.withdraw(received);
+                //swap already paid during callback at this point+nonce consumed, no reentrancy
                 (bool success, ) = callbackData.recipient.call{value: received}(new bytes(0));
                 require(success, 'U3R:withdraw error');
             }
