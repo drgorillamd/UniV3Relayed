@@ -64,11 +64,29 @@ contract uniV3Relayed {
         uint24 fee; //3
     }
 
+    /// @dev performs the authenticated swap, gas being paid by the executer.
+    /// Recipient needs to encode and pass SwapData and SwapCallbackData as well as the signed _data, 
+    /// a third party can then execute it.
+    /// @param v + r + s : _data signed by the swap recipients (the same as in callbackData.recipient)
+    /// @param _data : abi.encode( SwapData, SwapCallbackData)
     function relayedSwap(uint8 v, bytes32 r, bytes32 s, bytes memory _data) external payable returns (uint256 amount) {
 
         (bytes memory a, bytes memory b) = abi.decode(_data, (bytes, bytes));
-        (SwapData memory params) = abi.decode(a, (SwapData));
-        (SwapCallbackData memory callbackData) = abi.decode(b, (SwapCallbackData));
+        //(SwapData memory params) = abi.decode(a, (SwapData));
+        //(SwapCallbackData memory callbackData) = abi.decode(b, (SwapCallbackData));
+
+
+         //(SwapCallbackData memory callbackData) = abi.decode(b, (SwapCallbackData));
+        SwapCallbackData memory callbackData;
+        assembly {
+            callbackData := add(mload(mload(b)), 0x20)
+        }
+
+        //(SwapData memory params) = abi.decode(a, (SwapData));
+        SwapData memory params;
+        assembly {
+            params := add(mload(mload(a)), 0x20)
+        }
 
         require(params.exactInOrOut < 2**255, "U3R:int256 overflow");
         require(block.timestamp <= params.deadline, "U3R:deadline expired");

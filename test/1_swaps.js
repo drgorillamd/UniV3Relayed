@@ -84,7 +84,6 @@ describe("U3R: ETH -> exact 4000 DAI @ 0.3%", function () {
         ["tuple(address, address, address, uint24)"],
         [[WETH9,       DAI,      user.address,      fees]]);
     full_payload = ethers.utils.defaultAbiCoder.encode(["bytes", "bytes"], [swapParams, callbackData]);
-
     // -- hash and sign --
     const messageHashBytes = ethers.utils.keccak256(full_payload);
     const flatSig = await user.signMessage(ethers.utils.arrayify(messageHashBytes));
